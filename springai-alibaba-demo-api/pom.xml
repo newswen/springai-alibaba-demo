@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.hooya</groupId>
+        <artifactId>springai-alibaba-demo</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>springai-alibaba-demo-api</artifactId>
+    <description>springai-alibaba-demo-api</description>
+
+    <dependencies>
+    </dependencies>
+</project>
