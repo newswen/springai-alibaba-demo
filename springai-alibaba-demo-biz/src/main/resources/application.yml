@@ -1,0 +1,14 @@
+server:
+  port: 1104
+
+spring:
+  application:
+    name: spring-ai-alibaba-demo
+
+  ai:
+    openai:
+      api-key: sk-sv8Wpqd6gtJ1vGH771E8Db187a5d44928d3aF22fCa74AaE7
+      base-url: https://isgvtrbw.kostway.com
+      chat:
+        options:
+          model: gpt-4o-mini
