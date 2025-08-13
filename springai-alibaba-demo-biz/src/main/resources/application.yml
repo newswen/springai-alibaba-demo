@@ -4,7 +4,12 @@ server:
 spring:
   application:
     name: spring-ai-alibaba-demo
-
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    username: postgres
+    password: postgres
+    url: jdbc:postgresql://127.0.0.1:15432/ai-rag-knowledge
+    type: com.zaxxer.hikari.HikariDataSource
   ai:
     openai:
       api-key: sk-sv8Wpqd6gtJ1vGH771E8Db187a5d44928d3aF22fCa74AaE7
@@ -12,3 +17,17 @@ spring:
       chat:
         options:
           model: gpt-4o-mini
+      embedding:
+        options:
+          model: text-embedding-3-small
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        schema-validation: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+        max-document-batch-size: 10000 # Optional: Maximum number of documents per batch
+#logging:
+#  level:
+#    org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: info

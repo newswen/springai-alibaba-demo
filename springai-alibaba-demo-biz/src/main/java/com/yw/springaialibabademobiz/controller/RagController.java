@@ -6,6 +6,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,18 +16,23 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/ai")
 public class RagController {
 
-    @Resource
     private ChatClient chatClient;
 
+    public RagController(ChatClient.Builder builder) {
+        this.chatClient = builder.
+                defaultSystem("你是一个智能机器人，请根据用户输入，给出一个回答")
+                .build();
+    }
+
     @Resource
-    private VectorStore vectorStore;
+    private PgVectorStore pgVectorStore;
 
 
     @GetMapping(value = "/chat", produces = "text/plain; charset=UTF-8")
     public String generation(String userInput) {
         RetrievalAugmentationAdvisor retrievalAugmentationAdvisor = RetrievalAugmentationAdvisor.builder()
                 .documentRetriever(VectorStoreDocumentRetriever.builder()
-                        .vectorStore(vectorStore)
+                        .vectorStore(pgVectorStore)
                         .build())
                 .build();
         // 发起聊天请求并处理响应
