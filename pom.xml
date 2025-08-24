@@ -10,15 +10,16 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.hooya</groupId>
+    <groupId>com.yw</groupId>
     <artifactId>springai-alibaba-demo</artifactId>
+    <!--当定义了这个 子类模块会自动继承-->
     <version>1.0.0</version>
     <packaging>pom</packaging>
     <description>springai-alibaba-案例测试</description>
 
     <modules>
         <module>springai-alibaba-demo-api</module>
-        <module>springai-alibaba-demo-biz</module>
+        <module>springai-alibaba-demo-trigger</module>
     </modules>
 
 
