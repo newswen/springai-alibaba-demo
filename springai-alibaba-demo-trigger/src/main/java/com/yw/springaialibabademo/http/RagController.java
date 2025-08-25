@@ -1,6 +1,7 @@
 package com.yw.springaialibabademo.http;
 
 import com.yw.springaialibaba.api.IRagService;
+import com.yw.springaialibaba.response.Response;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -11,12 +12,13 @@ import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.rag.retrieval.search.VectorStoreDocumentRetriever;
+import org.springframework.ai.reader.tika.TikaDocumentReader;
+import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,6 +27,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/ai")
 @Slf4j
+@CrossOrigin(origins = "*")
 public class RagController implements IRagService {
 
     private ChatClient chatClient;
@@ -37,6 +40,29 @@ public class RagController implements IRagService {
 
     @Resource
     private PgVectorStore pgVectorStore;
+
+    @Resource
+    private TokenTextSplitter tokenTextSplitter;
+
+    /**
+     * 从外部放入文件 进行知识切割存入知识库
+     *http://localhost:8080/ai/upload?
+     * @param ragTag 知识库元数据标签
+     */
+    @PostMapping("/upload")
+    public Response<String> uploadFile(@RequestParam String ragTag, @RequestParam("files") List<MultipartFile> files) {
+        log.info("上传知识库开始 {}", ragTag);
+        for (MultipartFile file : files) {
+            //读取为DocMent知识库
+            TikaDocumentReader reader = new TikaDocumentReader(file.getResource());
+            List<Document> documents = reader.read();
+            //给整个文档添加元数据
+            documents.forEach(document -> document.getMetadata().put("knowledge", ragTag));
+            List<Document> splitDocuments = tokenTextSplitter.apply(documents);
+            pgVectorStore.accept(splitDocuments);
+        }
+        return Response.<String>builder().code("200").info("上传成功").build();
+    }
 
 
     @GetMapping(value = "/chat", produces = "text/plain; charset=UTF-8")
@@ -88,4 +114,21 @@ public class RagController implements IRagService {
         log.info("search result: {}", content);
         return content;
     }
+
+    /**
+     * 查询知识库名称
+     */
+    @Resource
+    private JdbcTemplate jdbcTemplate;
+
+    /**
+     *  http://localhost:1104/ai/knowledge
+     * @return
+     */
+    @GetMapping("/knowledge")
+    public List<String> getKnowledge() {
+        String sql = "SELECT DISTINCT metadata->>'knowledge' AS ragTag FROM vector_store WHERE metadata ? 'knowledge'";
+        return jdbcTemplate.queryForList(sql, String.class);
+    }
+
 }

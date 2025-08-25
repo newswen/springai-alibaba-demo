@@ -22,5 +22,5 @@ public interface IChatService {
      * @param query 用户输入内容
      * @return 聊天回复流
      */
-    Flux<String> chatStream(String query);
+    Flux<String> chatStream(String model, String ragTag, String query);
 }

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI 对话 · 纯 HTML/JS/Tailwind</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .shadow-inset-top { box-shadow: inset 0 10px 10px -10px rgba(0,0,0,.15); }
+        .shadow-inset-bottom { box-shadow: inset 0 -10px 10px -10px rgba(0,0,0,.15); }
+    </style>
+</head>
+<body class="h-screen bg-neutral-50 text-neutral-900">
+<div class="h-full grid grid-cols-[300px_1fr]">
+    <!-- 左侧：聊天列表 -->
+    <aside class="h-full bg-white border-r border-neutral-200 flex flex-col">
+        <div class="p-4 border-b border-neutral-200">
+            <button id="newChatBtn" class="w-full py-2 px-3 rounded-xl bg-black text-white text-sm font-medium hover:bg-neutral-800 active:scale-98 transition">新建聊天</button>
+        </div>
+        <button id="collapseToggle" class="flex items-center justify-between px-4 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900">
+            <span class="flex items-center gap-2">聊天列表</span>
+            <svg id="collapseIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 transition-transform"><path fill-rule="evenodd" d="M12 14.5a1 1 0 0 1-.707-.293l-5-5a1 1 0 1 1 1.414-1.414L12 11.086l4.293-4.293a1 1 0 0 1 1.414 1.414l-5 5A1 1 0 0 1 12 14.5z" clip-rule="evenodd"/></svg>
+        </button>
+        <div id="chatListWrapper" class="overflow-y-auto min-h-0 flex-1 shadow-inset-top">
+            <ul id="chatList" class="p-2 space-y-1"></ul>
+        </div>
+        <div class="p-4 text-[11px] text-neutral-400 border-t border-neutral-200">
+            ⌘/Ctrl + Enter 发送 · Enter 换行
+        </div>
+    </aside>
+
+    <!-- 右侧：对话区 -->
+    <main class="h-full flex flex-col">
+        <div class="h-14 bg-white border-b border-neutral-200 flex items-center justify-between px-4">
+            <div class="flex items-center gap-2">
+                <div id="currentChatTitle" class="text-sm font-semibold line-clamp-1">未选择会话</div>
+                <span id="streamStatus" class="text-[11px] text-neutral-400 hidden">流式中…</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="renameBtn" class="py-1 px-2 text-xs rounded-lg border border-neutral-200 hover:bg-neutral-100 disabled:opacity-40" disabled>重命名</button>
+                <button id="deleteBtn" class="py-1 px-2 text-xs rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-40" disabled>删除</button>
+            </div>
+        </div>
+
+        <div id="messageList" class="flex-1 overflow-y-auto p-6 space-y-4 bg-neutral-50"></div>
+
+        <div class="border-t border-neutral-200 bg-white">
+            <form id="composer" class="max-w-3xl mx-auto p-4 space-y-2">
+                <div class="flex items-center gap-2 text-xs text-neutral-500">
+                    <label class="flex items-center gap-1">
+                        <span>模型:</span>
+                        <input id="modelInput" type="text" value="gpt-4o-mini" class="w-32 px-2 py-1 rounded-lg border border-neutral-200 focus:outline-none" />
+                    </label>
+                    <label class="flex items-center gap-1">
+                        <span>知识库:</span>
+                        <select id="knowledgeSelect" class="w-32 px-2 py-1 rounded-lg border border-neutral-200 focus:outline-none">
+                            <option value="">默认</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="rounded-2xl border border-neutral-200 bg-white focus-within:shadow-md transition">
+                    <textarea id="prompt" rows="3" placeholder="输入你的问题…" class="w-full p-3 outline-none resize-none rounded-2xl"></textarea>
+                    <div class="flex items-center justify-end p-2 border-t border-neutral-100">
+                        <button id="stopBtn" type="button" class="hidden py-2 px-3 rounded-xl border border-neutral-200 text-sm hover:bg-neutral-100">停止</button>
+                        <button id="sendBtn" type="submit" class="py-2 px-4 rounded-xl bg-black text-white text-sm font-medium hover:bg-neutral-800">发送</button>
+                    </div>
+                </div>
+                <div class="text-[11px] text-neutral-400 mt-2">支持服务端 <code>text/event-stream</code> 流式接口：<code>/chat/stream?model=...&ragTag=...&query=...</code></div>
+            </form>
+        </div>
+    </main>
+</div>
+
+<script>
+    const $ = (sel) => document.querySelector(sel);
+    const chatListEl = $('#chatList');
+    const messageListEl = $('#messageList');
+    const currentChatTitleEl = $('#currentChatTitle');
+    const streamStatusEl = $('#streamStatus');
+    const newChatBtn = $('#newChatBtn');
+    const deleteBtn = $('#deleteBtn');
+    const renameBtn = $('#renameBtn');
+    const sendBtn = $('#sendBtn');
+    const stopBtn = $('#stopBtn');
+    const promptEl = $('#prompt');
+    const modelInputEl = $('#modelInput');
+    const knowledgeSelect = $('#knowledgeSelect');
+    const composerEl = $('#composer');
+    const collapseToggle = $('#collapseToggle');
+    const collapseIcon = $('#collapseIcon');
+    const chatListWrapper = $('#chatListWrapper');
+
+    let chats = [];
+    let activeChatId = null;
+    let eventSource = null;
+
+    function createId() { return 'c_' + Math.random().toString(36).slice(2, 9); }
+    function createChat(title = '新的会话') {
+        const id = createId();
+        const chat = { id, title, messages: [] };
+        chats.unshift(chat);
+        activeChatId = id;
+        renderChatList();
+        renderActiveChat();
+    }
+    function setActiveChat(id) {
+        activeChatId = id;
+        renderChatList();
+        renderActiveChat();
+    }
+    function deleteActiveChat() {
+        if (!activeChatId) return;
+        const idx = chats.findIndex(c => c.id === activeChatId);
+        if (idx >= 0) {
+            chats.splice(idx, 1);
+            activeChatId = chats[0]?.id || null;
+            renderChatList();
+            renderActiveChat();
+        }
+    }
+    function renameActiveChat() {
+        const chat = chats.find(c => c.id === activeChatId);
+        if (!chat) return;
+        const name = prompt('请输入新的会话名称：', chat.title) || chat.title;
+        chat.title = name.trim() || chat.title;
+        renderChatList();
+        renderActiveChatHeader();
+    }
+    function renderChatList() {
+        chatListEl.innerHTML = '';
+        chats.forEach((chat) => {
+            const li = document.createElement('li');
+            li.className = `group flex items-center justify-between gap-2 px-2 py-2 rounded-xl cursor-pointer ${chat.id === activeChatId ? 'bg-neutral-100' : 'hover:bg-neutral-50'}`;
+            li.dataset.id = chat.id;
+
+            const title = document.createElement('div');
+            title.className = 'flex-1 text-sm truncate';
+            title.textContent = chat.title;
+            li.appendChild(title);
+
+            const ops = document.createElement('div');
+            ops.className = 'hidden group-hover:flex items-center gap-1';
+            const rename = document.createElement('button');
+            rename.className = 'px-2 py-1 text-[11px] rounded-lg border border-neutral-200 hover:bg-neutral-100';
+            rename.textContent = '重命名';
+            rename.addEventListener('click', (e) => { e.stopPropagation(); activeChatId = chat.id; renameActiveChat(); });
+
+            const del = document.createElement('button');
+            del.className = 'px-2 py-1 text-[11px] rounded-lg border border-red-200 text-red-600 hover:bg-red-50';
+            del.textContent = '删除';
+            del.addEventListener('click', (e) => { e.stopPropagation(); activeChatId = chat.id; deleteActiveChat(); });
+
+            ops.appendChild(rename);
+            ops.appendChild(del);
+            li.appendChild(ops);
+
+            li.addEventListener('click', () => setActiveChat(chat.id));
+            chatListEl.appendChild(li);
+        });
+    }
+    function renderActiveChatHeader() {
+        const chat = chats.find(c => c.id === activeChatId);
+        currentChatTitleEl.textContent = chat ? chat.title : '未选择会话';
+        const enabled = !!chat;
+        deleteBtn.disabled = !enabled;
+        renameBtn.disabled = !enabled;
+    }
+    function renderActiveChat() {
+        renderActiveChatHeader();
+        messageListEl.innerHTML = '';
+        const chat = chats.find(c => c.id === activeChatId);
+        if (!chat) return;
+        chat.messages.forEach(m => appendMessageBubble(m.role, m.content, false));
+        messageListEl.scrollTo({ top: messageListEl.scrollHeight });
+    }
+    function appendMessageBubble(role, content = '', autoscroll = true) {
+        const isUser = role === 'user';
+        const wrap = document.createElement('div');
+        wrap.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+        const bubble = document.createElement('div');
+        bubble.className = `max-w-[80%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm shadow ${isUser ? 'bg-black text-white rounded-br-sm' : 'bg-white border border-neutral-200 rounded-bl-sm'}`;
+        bubble.textContent = content;
+        wrap.appendChild(bubble);
+        messageListEl.appendChild(wrap);
+        if (autoscroll) messageListEl.scrollTo({ top: messageListEl.scrollHeight, behavior: 'smooth' });
+        return bubble;
+    }
+    function addMessageToActive(role, content) {
+        const chat = chats.find(c => c.id === activeChatId);
+        if (!chat) return;
+        chat.messages.push({ role, content });
+    }
+    function updateLastAssistantMessage(text) {
+        const chat = chats.find(c => c.id === activeChatId);
+        if (!chat) return;
+        const last = [...chat.messages].reverse().find(m => m.role === 'assistant');
+        if (last) last.content = text;
+    }
+
+    // 事件绑定
+    newChatBtn.addEventListener('click', () => createChat());
+    deleteBtn.addEventListener('click', deleteActiveChat);
+    renameBtn.addEventListener('click', renameActiveChat);
+
+    let collapsed = false;
+    collapseToggle.addEventListener('click', () => {
+        collapsed = !collapsed;
+        chatListWrapper.style.display = collapsed ? 'none' : 'block';
+        collapseIcon.style.transform = collapsed ? 'rotate(180deg)' : 'rotate(0deg)';
+    });
+
+    // 快捷键发送
+    promptEl.addEventListener('keydown', (e) => {
+        const isMac = navigator.platform.toUpperCase().includes('MAC');
+        const sendCombo = (isMac && e.metaKey && e.key === 'Enter') || (!isMac && e.ctrlKey && e.key === 'Enter');
+        if (sendCombo) { e.preventDefault(); sendCurrentPrompt(); }
+    });
+    composerEl.addEventListener('submit', (e) => { e.preventDefault(); sendCurrentPrompt(); });
+    stopBtn.addEventListener('click', () => {
+        if (eventSource) { eventSource.close(); eventSource = null; stopBtn.classList.add('hidden'); streamStatusEl.classList.add('hidden'); }
+    });
+
+    // 加载知识库列表
+    async function loadKnowledgeList() {
+        try {
+            const base = window.API_BASE || 'http://localhost:1104';
+            const res = await fetch(`${base}/ai/knowledge`);
+            const data = await res.json();
+            knowledgeSelect.innerHTML = '<option value="">默认</option>';
+            data.forEach(k => {
+                const opt = document.createElement('option');
+                opt.value = k;
+                opt.textContent = k;
+                knowledgeSelect.appendChild(opt);
+            });
+        } catch (err) {
+            console.error('加载知识库失败:', err);
+        }
+    }
+    loadKnowledgeList();
+
+    // 发送请求
+    function sendCurrentPrompt() {
+        const query = promptEl.value.trim();
+        if (!query) return;
+        if (!activeChatId) createChat('新的会话');
+
+        addMessageToActive('user', query);
+        appendMessageBubble('user', query);
+
+        const assistantBubble = appendMessageBubble('assistant', '');
+        addMessageToActive('assistant', '');
+
+        const base = window.API_BASE || 'http://localhost:1104';
+        const model = modelInputEl.value.trim() || 'gpt-4o-mini';
+        const ragTag = knowledgeSelect.value || '';
+        const apiUrl = `${base}/chat/stream?model=${encodeURIComponent(model)}&ragTag=${encodeURIComponent(ragTag)}&query=${encodeURIComponent(query)}`;
+
+        if (eventSource) { try { eventSource.close(); } catch (_) {} }
+
+        try { eventSource = new EventSource(apiUrl); }
+        catch (err) { assistantBubble.textContent = '连接失败：' + (err?.message || String(err)); updateLastAssistantMessage(assistantBubble.textContent); return; }
+
+        stopBtn.classList.remove('hidden');
+        streamStatusEl.classList.remove('hidden');
+        let accumulated = '';
+
+        eventSource.onmessage = (event) => {
+            let data = event.data;
+            if (data === undefined || data === null) return;
+            if (data === '[DONE]') { finalize(); return; }
+
+            let parsed = null;
+            try { parsed = JSON.parse(data); } catch (_) {}
+
+            if (parsed && parsed.result) {
+                const content = parsed?.result?.output?.content ?? '';
+                const finish = parsed?.result?.metadata?.finishReason;
+                if (content) { accumulated += content; assistantBubble.textContent = accumulated; updateLastAssistantMessage(accumulated); }
+                if (finish === 'STOP') finalize();
+            } else if (data) {
+                accumulated += data;
+                assistantBubble.textContent = accumulated;
+                updateLastAssistantMessage(accumulated);
+            }
+        };
+
+        eventSource.onerror = () => finalize();
+
+        function finalize() {
+            if (eventSource) { try { eventSource.close(); } catch (_) {} eventSource = null; }
+            stopBtn.classList.add('hidden');
+            streamStatusEl.classList.add('hidden');
+            promptEl.value = '';
+            messageListEl.scrollTo({ top: messageListEl.scrollHeight, behavior: 'smooth' });
+            const chat = chats.find(c => c.id === activeChatId);
+            if (chat && (chat.title === '新的会话' || chat.title.startsWith('新的会话'))) {
+                chat.title = query.slice(0, 20) || '新的会话';
+                renderChatList();
+                renderActiveChatHeader();
+            }
+        }
+    }
+
+    // 初始化默认会话
+    createChat('新的会话');
+</script>
+</body>
+</html>

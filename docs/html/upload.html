@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>知识库上传 · AI 对话</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 与主页面相同的滚动阴影 */
+        .shadow-inset-top { box-shadow: inset 0 10px 10px -10px rgba(0,0,0,.15); }
+        .shadow-inset-bottom { box-shadow: inset 0 -10px 10px -10px rgba(0,0,0,.15); }
+    </style>
+</head>
+<body class="h-screen bg-neutral-50 text-neutral-900 flex items-center justify-center">
+<div class="w-full max-w-xl mx-auto p-6">
+    <!-- 卡片 -->
+    <div class="bg-white rounded-2xl shadow-lg border border-neutral-200">
+        <!-- 顶部 -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
+            <h1 class="text-lg font-semibold">上传知识库</h1>
+            <a href="/" class="text-sm text-blue-600 hover:underline">返回对话</a>
+        </div>
+
+        <!-- 表单 -->
+        <form id="uploadForm" class="p-6 space-y-5">
+            <!-- 知识库名称 -->
+            <div>
+                <label class="block text-sm font-medium mb-1">知识库名称</label>
+                <input id="ragTagInput"
+                       required
+                       placeholder="如：官方文档、产品 FAQ"
+                       class="w-full px-3 py-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            </div>
+
+            <!-- 文件选择 -->
+            <div>
+                <label class="block text-sm font-medium mb-1">选择文件</label>
+                <input id="fileInput"
+                       type="file"
+                       multiple
+                       accept=".md,.txt,.sql"
+                       class="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-neutral-100 file:text-neutral-700 hover:file:bg-neutral-200"/>
+                <!-- 已选文件列表 -->
+                <ul id="fileList" class="mt-3 space-y-1 text-xs text-neutral-600"></ul>
+            </div>
+
+            <!-- 进度 / 结果 -->
+            <div id="uploadStatus" class="hidden flex-col items-center space-y-2">
+                <div class="w-full bg-neutral-200 rounded-full h-1.5">
+                    <div id="progressBar" class="bg-blue-600 h-1.5 rounded-full" style="width:0%"></div>
+                </div>
+                <span id="statusText" class="text-sm text-neutral-600"></span>
+            </div>
+
+            <!-- 按钮 -->
+            <button id="submitBtn"
+                    type="submit"
+                    class="w-full py-2.5 rounded-xl bg-black text-white text-sm font-medium hover:bg-neutral-800 disabled:opacity-50">
+                开始上传
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+    const $ = (sel) => document.querySelector(sel);
+    const form = $('#uploadForm');
+    const ragTagInput = $('#ragTagInput');
+    const fileInput = $('#fileInput');
+    const fileList = $('#fileList');
+    const uploadStatus = $('#uploadStatus');
+    const progressBar = $('#progressBar');
+    const statusText = $('#statusText');
+    const submitBtn = $('#submitBtn');
+
+    const API_BASE = window.API_BASE || 'http://localhost:1104';
+
+    // 显示已选文件
+    fileInput.addEventListener('change', () => {
+        fileList.innerHTML = '';
+        [...fileInput.files].forEach(f => {
+            const li = document.createElement('li');
+            li.textContent = `${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
+            fileList.appendChild(li);
+        });
+    });
+
+    // 上传逻辑
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const ragTag = ragTagInput.value.trim();
+        const files = fileInput.files;
+        if (!ragTag || files.length === 0) return;
+
+        const fd = new FormData();
+        fd.append('ragTag', ragTag);
+        [...files].forEach(f => fd.append('files', f));
+
+        uploadStatus.classList.remove('hidden');
+        uploadStatus.classList.add('flex');
+        submitBtn.disabled = true;
+        statusText.textContent = '上传中...';
+        progressBar.style.width = '0%';
+
+        try {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${API_BASE}/ai/upload`);
+            xhr.upload.addEventListener('progress', (ev) => {
+                if (ev.lengthComputable) {
+                    const percent = Math.round((ev.loaded / ev.total) * 100);
+                    progressBar.style.width = `${percent}%`;
+                }
+            });
+
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    const res = JSON.parse(xhr.responseText);
+                    if (res.code === '200') {
+                        progressBar.style.width = '100%';
+                        statusText.textContent = '上传成功！';
+                        statusText.className = 'text-sm text-green-600';
+                        // 清空
+                        setTimeout(() => {
+                            form.reset();
+                            fileList.innerHTML = '';
+                            uploadStatus.classList.add('hidden');
+                            submitBtn.disabled = false;
+                        }, 1500);
+                    } else {
+                        throw new Error(res.info || '服务端返回未知错误');
+                    }
+                } else {
+                    throw new Error(`HTTP ${xhr.status}`);
+                }
+            };
+            xhr.onerror = () => { throw new Error('网络错误'); };
+            xhr.send(fd);
+        } catch (err) {
+            statusText.textContent = `上传失败：${err.message}`;
+            statusText.className = 'text-sm text-red-600';
+            submitBtn.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>

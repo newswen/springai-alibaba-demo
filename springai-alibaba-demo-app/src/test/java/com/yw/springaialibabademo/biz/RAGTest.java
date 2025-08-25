@@ -34,12 +34,12 @@ public class RAGTest {
         TikaDocumentReader reader = new TikaDocumentReader("./data/test.md");
         // 将文件转为Document  读到的是完整大文本 Document
         List<Document> documents = reader.read();
+        //给整个大文本添加元数据
+        documents.forEach(doc -> doc.getMetadata().put("knowledge", "机密人员分析"));
         //将文本内容划分为更小的片段 是把大文本切割成小块 Document 基于 token 数做限制，默认约256~512 token 级别
         List<Document> documentSplitterList = tokenTextSplitter.apply(documents);
-        //给整个大文本添加元数据
-        documents.forEach(doc -> doc.getMetadata().put("knowledge", "文案违禁词"));
         //给切割后的每一个文档添加元数据 保持大统一
-        documentSplitterList.forEach(doc -> doc.getMetadata().put("knowledge", "文案违禁词"));
+//        documentSplitterList.forEach(doc -> doc.getMetadata().put("knowledge", "机密人员分析"));
         // 存入向量数据库，这个过程会自动调用embeddingModel,将文本变成向量再存入
         pgVectorStore.accept(documentSplitterList);
         log.info("上传完成");
